@@ -177,6 +177,13 @@ export const en = {
     homeConfigEntry: "Configuration name",
     detectHomeConfig: "Detect automatically",
 
+    automationTitle: "Automation",
+    automationDescription:
+      "Checking never changes anything on disk. Preparing and applying stay manual — they are never triggered on their own.",
+    checkOnStartEntry: "Check when the app starts",
+    checkOnStartSubtitle:
+      "Runs once, a few seconds in, so the network has a chance to come up after login.",
+
     languageTitle: "Language",
     languageDescription:
       "Takes effect after restarting the app.",

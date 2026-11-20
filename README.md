@@ -57,6 +57,12 @@ launch. To run it alongside your session, add a `.desktop` entry under
 `~/.config/autostart`, or add this flake as an input to your own
 home-manager configuration.
 
+Started that way, it runs one check a few seconds in (long enough for the
+network to come up after login) so the tray reflects reality instead of the
+last session's result. That's the only thing that happens on its own, and
+it can be turned off in Settings → General; **Prepare** and **Apply** are
+never triggered automatically.
+
 ## Configuration
 
 Three things are specific to your machine and are editable from the gear

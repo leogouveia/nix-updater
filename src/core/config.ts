@@ -75,6 +75,15 @@ export const [homeConfiguration, setHomeConfiguration] = createState<string>(
 )
 export const [apps, setApps] = createState<AppDefinition[]>(DEFAULT_APPS)
 /** Idioma da interface; "system" segue o locale do ambiente. */
+/**
+ * Verificar sozinho ao abrir o aplicativo.
+ *
+ * Ligado por padrão: com o autostart da sessão, é o que faz o indicador
+ * saber o estado sem o usuário pedir — sem isso ele nasce mostrando o
+ * resultado da última vez. Continua sendo a *única* automação: não há
+ * intervalo nem timer, o resto é manual de propósito.
+ */
+export const [checkOnStart, setCheckOnStart] = createState<boolean>(true)
 export const [localePreference, setLocalePreference] =
   createState<LocalePreference>("system")
 
@@ -97,6 +106,7 @@ interface ConfigFile {
   homeConfiguration?: string
   apps?: AppDefinition[]
   locale?: LocalePreference
+  checkOnStart?: boolean
 }
 
 function readConfigFile(): ConfigFile | null {
@@ -214,6 +224,9 @@ export async function loadConfig(): Promise<void> {
 
   if (saved?.apps) setApps(saved.apps)
   if (saved?.locale) setLocalePreference(saved.locale)
+  // `!== undefined` e não `if (saved?.checkOnStart)`: `false` é um valor
+  // salvo válido, e o atalho o trataria como "não configurado".
+  if (saved?.checkOnStart !== undefined) setCheckOnStart(saved.checkOnStart)
 
   let detectedFlakeDir: string | null = null
   if (saved?.flakeDir) {
@@ -261,4 +274,9 @@ export function updateApps(value: AppDefinition[]): void {
 export function updateLocalePreference(value: LocalePreference): void {
   setLocalePreference(value)
   writeConfigPatch({ locale: value })
+}
+
+export function updateCheckOnStart(value: boolean): void {
+  setCheckOnStart(value)
+  writeConfigPatch({ checkOnStart: value })
 }

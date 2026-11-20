@@ -3,6 +3,8 @@ import Gtk from "gi://Gtk?version=4.0"
 import { For, createComputed, createRoot, createState } from "ags"
 import {
   apps,
+  checkOnStart,
+  updateCheckOnStart,
   flakeDir,
   homeConfiguration,
   localePreference,
@@ -206,6 +208,20 @@ function GeneralPage(dialogRef: DialogRef): Gtk.Widget {
         description={t.settings.homeConfigDescription}
       >
         {homeConfigEntry}
+      </Adw.PreferencesGroup>
+
+      <Adw.PreferencesGroup
+        title={t.settings.automationTitle}
+        description={t.settings.automationDescription}
+      >
+        <Adw.SwitchRow
+          title={t.settings.checkOnStartEntry}
+          subtitle={t.settings.checkOnStartSubtitle}
+          active={checkOnStart.peek()}
+          onNotifyActive={(self: Adw.SwitchRow) => {
+            if (self.active !== checkOnStart.peek()) updateCheckOnStart(self.active)
+          }}
+        />
       </Adw.PreferencesGroup>
 
       <Adw.PreferencesGroup

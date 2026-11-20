@@ -9,7 +9,12 @@ import SettingsDialog from "./src/ui/SettingsDialog"
 import { TrayItem } from "./src/tray/sni"
 import { iconFor, tooltipFor } from "./src/tray/presentation"
 import { APP_ID, INSTANCE_NAME } from "./src/core/registry"
-import { loadConfig, localePreference, homeConfigNotice } from "./src/core/config"
+import {
+  checkOnStart,
+  homeConfigNotice,
+  loadConfig,
+  localePreference,
+} from "./src/core/config"
 import { initI18n, t } from "./src/core/i18n"
 import {
   runApply,
@@ -54,6 +59,26 @@ function toggleWindow(): void {
   if (!window) return
   window.visible = !window.visible
   if (window.visible) window.present()
+}
+
+/**
+ * Espera antes da verificação automática de abertura.
+ *
+ * Com o autostart da sessão, o aplicativo sobe junto do login, quando a
+ * rede quase sempre ainda não conectou. A sondagem trataria isso como
+ * "unreachable" — honesto, mas inútil: gastaria a verificação e deixaria
+ * tudo como desconhecido. Esperar um pouco não garante rede, só torna o
+ * caso comum o que funciona.
+ */
+const STARTUP_CHECK_DELAY_MS = 15_000
+
+function scheduleStartupCheck(): void {
+  GLib.timeout_add(GLib.PRIORITY_DEFAULT, STARTUP_CHECK_DELAY_MS, () => {
+    // `silent`: ninguém quer um toast de "tudo atualizado" no login. Se
+    // houver atualização, a notificação e o ícone da bandeja avisam.
+    void runCheck({ silent: true })
+    return GLib.SOURCE_REMOVE
+  })
 }
 
 function syncTray(): void {
@@ -129,6 +154,8 @@ app.start({
           t.toasts.homeConfigAmbiguous(notice.candidates.join(", ")),
         )
       }
+
+      if (checkOnStart.peek()) scheduleStartupCheck()
     })
 
     tray = new TrayItem({

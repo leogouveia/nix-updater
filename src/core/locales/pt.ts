@@ -173,6 +173,13 @@ export const pt: Messages = {
     homeConfigEntry: "Nome da configuração",
     detectHomeConfig: "Detectar automaticamente",
 
+    automationTitle: "Automação",
+    automationDescription:
+      "Verificar não altera nada em disco. Preparar e aplicar continuam manuais — nunca são disparados sozinhos.",
+    checkOnStartEntry: "Verificar ao abrir o aplicativo",
+    checkOnStartSubtitle:
+      "Roda uma vez, alguns segundos depois, pra dar tempo da rede subir após o login.",
+
     languageTitle: "Idioma",
     languageDescription: "Passa a valer depois de reiniciar o aplicativo.",
     languageEntry: "Idioma da interface",
