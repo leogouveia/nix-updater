@@ -137,6 +137,12 @@ export const en = {
       `Failed to reactivate generation ${id}: ${message}`,
     appSaved: (id: string) => `App "${id}" saved`,
     appRemoved: (id: string) => `App "${id}" removed`,
+    homeConfigDetected: (name: string) => `Detected configuration: "${name}"`,
+    homeConfigNotFound: (
+      "No homeConfigurations found in the flake — using the system user as a guess"
+    ),
+    homeConfigAmbiguous: (names: string) =>
+      `Several configurations found (${names}) — pick the right one below`,
   },
 
   settings: {
@@ -153,6 +159,7 @@ export const en = {
     homeConfigDescription:
       'Must match exactly the key used in your flake.nix: what you type here becomes "homeConfigurations.NAME" in the nix eval run by Prepare. Getting it wrong makes Prepare fail.',
     homeConfigEntry: "Configuration name",
+    detectHomeConfig: "Detect automatically",
 
     languageTitle: "Language",
     languageDescription:

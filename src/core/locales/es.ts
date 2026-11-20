@@ -134,6 +134,11 @@ export const es: Messages = {
       `Error al reactivar la generación ${id}: ${message}`,
     appSaved: (id) => `Aplicación "${id}" guardada`,
     appRemoved: (id) => `Aplicación "${id}" eliminada`,
+    homeConfigDetected: (name) => `Configuración detectada: "${name}"`,
+    homeConfigNotFound:
+      "No se encontró homeConfigurations en el flake — usando el usuario del sistema como suposición",
+    homeConfigAmbiguous: (names) =>
+      `Se encontraron varias configuraciones (${names}) — elige la correcta abajo`,
   },
 
   settings: {
@@ -150,6 +155,7 @@ export const es: Messages = {
     homeConfigDescription:
       'Debe coincidir exactamente con la clave usada en tu flake.nix: lo que escribas aquí se convierte en "homeConfigurations.NOMBRE" en el nix eval de Preparar. Equivocarse hace que Preparar falle.',
     homeConfigEntry: "Nombre de la configuración",
+    detectHomeConfig: "Detectar automáticamente",
 
     languageTitle: "Idioma",
     languageDescription: "Se aplica al reiniciar la aplicación.",

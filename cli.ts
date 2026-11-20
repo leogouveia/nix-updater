@@ -70,16 +70,17 @@ function render(result: CheckResult): string {
   return lines.join("\n")
 }
 
-loadConfig()
-initI18n(localePreference.peek())
-
 const args = system.programArgs
 const asJson = args.includes("--json")
 
 const loop = GLib.MainLoop.new(null, false)
 let exitCode = 0
 
-check()
+loadConfig()
+  .then(() => {
+    initI18n(localePreference.peek())
+    return check()
+  })
   .then((result) => {
     print(asJson ? JSON.stringify(result, null, 2) : render(result))
   })

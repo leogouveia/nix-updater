@@ -6,6 +6,7 @@ import {
   flakeDir,
   homeConfiguration,
   localePreference,
+  redetectHomeConfiguration,
   updateApps,
   updateFlakeDir,
   updateHomeConfiguration,
@@ -62,6 +63,45 @@ function GeneralPage(): Gtk.Widget {
     </Adw.EntryRow>
   ) as Adw.EntryRow
 
+  const homeConfigEntry = (
+    <Adw.EntryRow
+      title={t.settings.homeConfigEntry}
+      text={homeConfiguration.peek()}
+      showApplyButton
+      onApply={(self: Adw.EntryRow) => updateHomeConfiguration(self.text)}
+    >
+      <Gtk.Button
+        $type="suffix"
+        iconName="view-refresh-symbolic"
+        valign={Gtk.Align.CENTER}
+        tooltipText={t.settings.detectHomeConfig}
+        onClicked={(self: Gtk.Button) => {
+          self.sensitive = false
+          void redetectHomeConfiguration()
+            .then((notice) => {
+              homeConfigEntry.text = homeConfiguration.peek()
+              if (notice === null) {
+                showToast(
+                  "success",
+                  t.settings.homeConfigDetected(homeConfiguration.peek()),
+                )
+              } else if (notice.kind === "guessed") {
+                showToast("error", t.settings.homeConfigNotFound)
+              } else {
+                showToast(
+                  "error",
+                  t.settings.homeConfigAmbiguous(notice.candidates.join(", ")),
+                )
+              }
+            })
+            .finally(() => {
+              self.sensitive = true
+            })
+        }}
+      />
+    </Adw.EntryRow>
+  ) as Adw.EntryRow
+
   const localeRow = (
     <Adw.ComboRow
       title={t.settings.languageEntry}
@@ -98,12 +138,7 @@ function GeneralPage(): Gtk.Widget {
         title={t.settings.homeConfigTitle}
         description={t.settings.homeConfigDescription}
       >
-        <Adw.EntryRow
-          title={t.settings.homeConfigEntry}
-          text={homeConfiguration.peek()}
-          showApplyButton
-          onApply={(self: Adw.EntryRow) => updateHomeConfiguration(self.text)}
-        />
+        {homeConfigEntry}
       </Adw.PreferencesGroup>
 
       <Adw.PreferencesGroup

@@ -66,8 +66,13 @@ button in the title bar (or via IPC, see below), persisted to
 - **Application catalog** — packages with a dedicated input (see table
   above); edit or add entries without recompiling the project.
 
-With no configuration at all, it falls back to generic defaults — nothing
-is hardcoded to a specific user or machine.
+On first run, the first two are auto-detected: the flake location by
+checking common paths (`~/nix-config`, `~/.config/home-manager`,
+`~/nixos-config`, `~/dotfiles`), and the configuration name by evaluating
+`homeConfigurations` on whatever flake was found. A guess (ambiguous match,
+or nothing found) is never saved silently — it only fills the field for you
+to confirm in Settings, where a "detect automatically" button re-runs it on
+demand.
 
 ## The three operations
 
@@ -158,9 +163,6 @@ to land:
 - [ ] Cache remote probes for a short TTL, keyed by the lock's hash — right
       now every check re-queries every input's forge, which costs real
       seconds in the common case where nothing changed.
-- [ ] Auto-detect `homeConfiguration` and the flake location on first run
-      (`nix eval .#homeConfigurations`, common paths like `~/nix-config`,
-      `~/.config/home-manager`) instead of requiring manual setup.
 - [ ] Read-only Flatpak section — `nix-flatpak` already self-updates, so
       this would just surface what's pinned, not control it.
 - [ ] NixOS system generations (not just Home Manager) as a second,

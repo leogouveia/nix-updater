@@ -9,7 +9,7 @@ import SettingsDialog from "./src/ui/SettingsDialog"
 import { TrayItem } from "./src/tray/sni"
 import { iconFor, tooltipFor } from "./src/tray/presentation"
 import { APP_ID, INSTANCE_NAME } from "./src/core/registry"
-import { loadConfig, localePreference } from "./src/core/config"
+import { loadConfig, localePreference, homeConfigNotice } from "./src/core/config"
 import { initI18n, t } from "./src/core/i18n"
 import {
   runApply,
@@ -76,7 +76,7 @@ app.start({
   css: style,
   icons: ICONS,
 
-  main() {
+  async main() {
     // Ícone da janela para compositores que não casam pelo .desktop
     // (Wayland já casa pelo app_id, X11 e alguns docks precisam disto).
     Gtk.Window.set_default_icon_name(APP_ID)
@@ -90,7 +90,9 @@ app.start({
     })
     app.add_action(show)
 
-    loadConfig()
+    // Só demora na primeira execução (ou se a config foi apagada): depois
+    // de confirmado uma vez, o que vem do disco é lido sem rodar `nix eval`.
+    await loadConfig()
     // Antes de montar qualquer janela: `t` é resolvido uma vez por processo,
     // então trocar o idioma nas Configurações só vale na próxima execução.
     initI18n(localePreference.peek())
@@ -103,6 +105,13 @@ app.start({
       onApply: () => void runApply(),
       onRollback: (generation) => void runRollback(generation),
     }) as Gtk.Window
+
+    // Duas ou mais `homeConfigurations` encontradas: a primeira foi usada
+    // como palpite, mas sem aviso o usuário não saberia que precisa revisar.
+    const notice = homeConfigNotice.peek()
+    if (notice?.kind === "ambiguous") {
+      state.showToast("error", t.toasts.homeConfigAmbiguous(notice.candidates.join(", ")))
+    }
 
     tray = new TrayItem({
       id: "nix-updater",

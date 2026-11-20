@@ -37,7 +37,13 @@ function classify(item: string): Omit<DeclaredPackage, "sourceFile"> | null {
   if (SIMPLE_ATTR.test(item)) return { kind: "nixpkgs", name: item }
 
   const dotted = DOTTED_ATTR.exec(item)
-  if (dotted) return { kind: "nixpkgs", name: `${dotted[1]}.${dotted[2]}` }
+  if (dotted) {
+    const [, base, rest] = dotted
+    // "pkgs.foo" sem `with pkgs;` vira o mesmo atributo que "foo" dentro de
+    // `with pkgs; [ foo ]` — só perde esse prefixo quando a base é "pkgs";
+    // qualquer outra base (ex. "hunspellDicts") é parte do atributo mesmo.
+    return { kind: "nixpkgs", name: base === "pkgs" ? rest : `${base}.${rest}` }
+  }
 
   return null
 }
@@ -89,7 +95,11 @@ async function parseFile(path: string): Promise<DeclaredPackage[]> {
   const homeBlock = text.slice(homeOpenBrace, homeClose + 1)
 
   const declared: DeclaredPackage[] = []
-  const packagesRe = /packages = \(/g
+  // Com `with pkgs; [...]` o AST embrulha a lista num parêntese extra
+  // ("packages = (with pkgs; [...])"); sem `with` nenhum, o valor é a lista
+  // direto ("packages = [...]") — as duas formas precisam ser aceitas, não
+  // só a primeira.
+  const packagesRe = /packages = (?=[([])/g
   let m: RegExpExecArray | null
   while ((m = packagesRe.exec(homeBlock))) {
     const openParen = m.index + "packages = ".length
