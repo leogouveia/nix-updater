@@ -26,9 +26,12 @@ nix-updater surfaces that distinction instead of hiding it:
 | **Declared packages** | have their own attribute in `home.packages`, but share `nixpkgs` | no checkbox — move together with whichever input provides them |
 | **Other packages** | installed, but no attribute found in your config | no checkbox |
 
-Applications aren't a hardcoded list: any `inputs.<name>.packages.<system>.default`
-referenced inside `home.packages` is picked up automatically on the next
-check, with a checkbox of its own — no need to edit this project.
+The Applications tier is a catalog you edit in Settings (gear button) — add
+an app directly, or import one from any input already in your `flake.lock`
+(the search in Settings → Catalog lists packages it provides, if it's a
+flake with more than one). Anything with its own input but not registered
+here just falls into "Other packages" instead, with no individual version
+tracking.
 
 ## Scope today
 

@@ -187,8 +187,12 @@ export const en = {
     catalogTab: "Catalog",
     catalogTitle: "App catalog",
     catalogDescription:
-      'Apps with their own flake input, individually updatable on the Apps tab. Apps following the "inputs.NAME.packages.${pkgs.system}.default" pattern inside home.packages already show up there on their own — only register here what does not follow that pattern.',
+      "Apps with their own flake input, individually updatable on the Apps tab. Only what's registered here shows up there — add an app below, or import one straight from a flake.lock input further down.",
     addApp: "Add app",
+    uncatalogedTitle: "Found in home.packages",
+    uncatalogedDescription:
+      "Packages you declared from a dedicated flake input, not in the catalog yet. The attribute comes from your own config, so nothing here is a guess.",
+    importApp: "Add to catalog",
     edit: "Edit",
     newApp: "New app",
     save: "Save",
@@ -204,11 +208,14 @@ export const en = {
     fieldInput: "Flake input providing the package (required)",
     fieldLabel: "Display name (optional — uses the id if left blank)",
     fieldIcon: "GTK theme icon (optional — uses a generic one if left blank)",
+    browseIcons: "Browse icons",
+    searchIcons: "Search icons…",
     fieldAttr: "Attribute inside the input (optional)",
     fieldStoreNames: "Store names, comma separated (optional)",
     idRequired: "The id field is required",
     inputRequired: 'The "flake input" field is required',
-    duplicateId: (id: string) => `An app with id "${id}" already exists`,
+    duplicateId: (id: string, input: string) =>
+      `Not saved: the id "${id}" is already taken by the app from input "${input}". Pick another id.`,
 
     aboutTab: "About",
     aboutTitle: "About and how to use",

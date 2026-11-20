@@ -1,4 +1,3 @@
-import { SYSTEM } from "../core/registry"
 import { apps as appCatalog, flakeDir, type AppDefinition } from "../core/config"
 import type {
   AppStatus,
@@ -104,44 +103,13 @@ async function appStatus(
 }
 
 /**
- * Um app descoberto em `home.packages` via `inputs.<nome>.packages...default`
- * que ainda não está no catálogo `APPS` — mesma ideia dos apps hardcoded,
- * só que achada no texto em vez de escrita à mão em `registry.ts`. Assim,
- * editar o `home-manager` e adicionar um input novo já basta pra ele
- * aparecer em "Aplicativos", sem precisar tocar neste projeto.
- */
-async function discoveredAppStatus(
-  inputName: string,
-  current: LockNodes,
-  probes: ProbeResults,
-): Promise<AppStatus> {
-  const attr = `packages.${SYSTEM}.default`
-  const installed = await evalVersion(flakeDir.peek(), inputName, attr)
-  const candidate = await candidateVersionFor(
-    current,
-    probes,
-    inputName,
-    attr,
-    installed,
-  )
-
-  return {
-    id: inputName,
-    label: inputName,
-    icon: "package-x-generic-symbolic",
-    tier: "app",
-    input: inputName,
-    installed,
-    candidate,
-    state: stateOf(installed, candidate),
-  }
-}
-
-/**
  * Versões dos pacotes sem input próprio achados em `home.packages` (ver
  * `src/discovery/declared.ts`), avaliadas numa chamada em lote. Pacotes com
- * input próprio (`kind: "input"`) não entram aqui — viram apps, não "pacotes
- * declarados": ver `discoveredAppStatus`.
+ * input próprio (`kind: "input"`) não entram aqui — a aba Aplicativos só
+ * mostra o catálogo cadastrado manualmente em Configurações; um input
+ * referenciado em `home.packages` mas não catalogado não ganha tracking de
+ * versão próprio, só aparece em "Outros pacotes" como qualquer instalado
+ * sem atributo reconhecido.
  *
  * `sharedChanged` diz se vale reavaliar: qualquer input *sem app dono* que
  * tenha mudado pode mover esses pacotes. É deliberadamente conservador — não
@@ -224,24 +192,10 @@ export async function check(): Promise<CheckResult> {
   const current = readLock()
   const probes = await probeInputs(current)
   const catalog = appCatalog.peek()
-  const catalogInputs = new Set(catalog.map((a) => a.input))
 
-  const catalogApps = await Promise.all(
+  const apps = await Promise.all(
     catalog.map((app) => appStatus(app, installed, current, probes)),
   )
-  const discoveredInputNames = [
-    ...new Set(
-      declared
-        .filter((d) => d.kind === "input" && !catalogInputs.has(d.name))
-        .map((d) => d.name),
-    ),
-  ]
-  const discoveredApps = await Promise.all(
-    discoveredInputNames.map((name) =>
-      discoveredAppStatus(name, current, probes),
-    ),
-  )
-  const apps = [...catalogApps, ...discoveredApps]
 
   const appByInput = new Map(apps.map((a) => [a.input, a.id]))
   const inputs = inputStatuses(current, probes, appByInput)
@@ -258,7 +212,6 @@ export async function check(): Promise<CheckResult> {
 
   const claimed = new Set([
     ...catalog.flatMap((a) => a.storeNames),
-    ...discoveredApps.map((a) => a.id),
     ...declaredPackages.map((d) => d.attr),
   ])
   const sharedPackages = installed.filter((p) => !claimed.has(p.name))

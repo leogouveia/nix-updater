@@ -1,6 +1,7 @@
 import Adw from "gi://Adw?version=1"
 import Gtk from "gi://Gtk?version=4.0"
 import { For, createComputed } from "ags"
+import { apps as catalogApps } from "../../../core/config"
 import { t } from "../../../core/i18n"
 import { result } from "../../../core/state"
 import type { AppStatus } from "../../../core/types"
@@ -27,9 +28,26 @@ function AppRow(initial: AppStatus): Gtk.Widget {
   const apps = createComputed([result], (r) => r?.apps ?? [])
   const status = trackById(apps, initial, (a) => a.id)
 
+  // `label`/`icon` não dependem de uma verificação nova pra mudar — são
+  // metadados do catálogo (editáveis em Configurações), então vêm direto
+  // dele em vez de ficarem presos no que a última Verificação viu. `For`
+  // reaproveita a linha pelo `id`; sem isso em `createComputed`, o texto
+  // ficaria congelado na primeira renderização mesmo depois de editar.
+  const label = createComputed(
+    [status, catalogApps],
+    (s, catalog) => catalog.find((a) => a.id === s.id)?.label || s.label,
+  )
+  const icon = createComputed(
+    [status, catalogApps],
+    (s, catalog) =>
+      catalog.find((a) => a.id === s.id)?.icon ||
+      s.icon ||
+      "package-x-generic-symbolic",
+  )
+
   return (
     <Adw.ActionRow
-      title={initial.label}
+      title={label}
       subtitle={createComputed(
         [status],
         (s) => `${versionLabel(s)}  ·  ${s.input}`,
@@ -42,11 +60,7 @@ function AppRow(initial: AppStatus): Gtk.Widget {
           (s) => s.state === "update-available" || s.state === "pending-apply",
         )}
       />
-      <Gtk.Image
-        $type="prefix"
-        iconName={initial.icon || "package-x-generic-symbolic"}
-        pixelSize={32}
-      />
+      <Gtk.Image $type="prefix" iconName={icon} pixelSize={32} />
       {StatusBadge(createComputed([status], (s) => s.state))}
     </Adw.ActionRow>
   ) as Gtk.Widget

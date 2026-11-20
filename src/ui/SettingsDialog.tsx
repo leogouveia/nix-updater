@@ -1,6 +1,6 @@
 import Adw from "gi://Adw?version=1"
 import Gtk from "gi://Gtk?version=4.0"
-import { For, createRoot } from "ags"
+import { For, createComputed, createRoot, createState } from "ags"
 import {
   apps,
   flakeDir,
@@ -13,9 +13,72 @@ import {
   updateLocalePreference,
   type AppDefinition,
 } from "../core/config"
+import { discoverDeclaredPackages } from "../discovery/declared"
 import { LOCALES, t, type LocalePreference } from "../core/i18n"
 import { SYSTEM } from "../core/registry"
-import { showToast } from "../core/state"
+import { runCheck } from "../core/operations"
+import IconField from "./components/IconField"
+
+/** Referência tardia ao diálogo: as páginas são montadas antes dele existir. */
+type DialogRef = () => Adw.PreferencesDialog
+
+type ToastKind = "success" | "warning" | "error"
+
+const TOAST_STYLE: Record<
+  ToastKind,
+  { icon: string | null; cssClass: string | null; timeout: number }
+> = {
+  // Sucesso fica sem ícone nem cor: é o caso comum, e destacá-lo roubaria
+  // a atenção que os outros dois precisam ter.
+  success: { icon: null, cssClass: null, timeout: 3 },
+  warning: { icon: "dialog-warning-symbolic", cssClass: "toast-warning", timeout: 6 },
+  // Erro costuma ser instrução ("escolha outro id"), e some antes de ser
+  // lido no tempo padrão.
+  error: { icon: "dialog-error-symbolic", cssClass: "toast-error", timeout: 8 },
+}
+
+/**
+ * Feedback dentro do diálogo, não na janela principal.
+ *
+ * O `showToast` de `core/state` alimenta o `ToastOverlay` da janela, que
+ * fica *atrás* do diálogo — uma mensagem de erro ali passa despercebida
+ * exatamente quando mais importa. `Adw.PreferencesDialog` tem overlay
+ * próprio.
+ *
+ * A cor vai no `custom_title` porque `Adw.Toast` não é um `Gtk.Widget` e
+ * não aceita classe CSS; o ícone acompanha para a severidade não depender
+ * só de cor (ver `style.scss`).
+ */
+function dialogToast(
+  dialogRef: DialogRef,
+  kind: ToastKind,
+  message: string,
+): void {
+  const { icon, cssClass, timeout } = TOAST_STYLE[kind]
+  const toast = new Adw.Toast({ timeout })
+
+  if (!cssClass || !icon) {
+    toast.title = message
+    dialogRef().add_toast(toast)
+    return
+  }
+
+  // `createRoot` porque isto roda de dentro de um handler de clique, fora
+  // da pilha síncrona que o escopo da `SettingsDialog` rastreia — sem um
+  // escopo próprio, o JSX abaixo reclama de "out of tracking context".
+  createRoot((dispose) => {
+    toast.set_custom_title(
+      (
+        <box orientation={Gtk.Orientation.HORIZONTAL} spacing={8}>
+          <Gtk.Image iconName={icon} cssClasses={[cssClass]} />
+          <label label={message} wrap cssClasses={[cssClass]} xalign={0} />
+        </box>
+      ) as Gtk.Widget,
+    )
+    toast.connect("dismissed", () => dispose())
+    dialogRef().add_toast(toast)
+  })
+}
 
 function pickFolder(button: Gtk.Button, onPicked: (path: string) => void): void {
   const dialog = new Gtk.FileDialog({ title: t.settings.folderDialogTitle })
@@ -40,7 +103,7 @@ const LOCALE_NAMES: Record<string, string> = {
   es: "Español",
 }
 
-function GeneralPage(): Gtk.Widget {
+function GeneralPage(dialogRef: DialogRef): Gtk.Widget {
   const flakeDirEntry = (
     <Adw.EntryRow
       title={t.settings.flakeDirEntry}
@@ -81,15 +144,19 @@ function GeneralPage(): Gtk.Widget {
             .then((notice) => {
               homeConfigEntry.text = homeConfiguration.peek()
               if (notice === null) {
-                showToast(
+                dialogToast(
+                  dialogRef,
                   "success",
                   t.settings.homeConfigDetected(homeConfiguration.peek()),
                 )
               } else if (notice.kind === "guessed") {
-                showToast("error", t.settings.homeConfigNotFound)
+                // Não é falha: a detecção rodou, só não achou nada — o
+                // valor atual é um palpite que vale revisar.
+                dialogToast(dialogRef, "warning", t.settings.homeConfigNotFound)
               } else {
-                showToast(
-                  "error",
+                dialogToast(
+                  dialogRef,
+                  "warning",
                   t.settings.homeConfigAmbiguous(notice.candidates.join(", ")),
                 )
               }
@@ -117,7 +184,7 @@ function GeneralPage(): Gtk.Widget {
         const chosen = LOCALE_CHOICES[self.selected]
         if (!chosen || chosen === localePreference.peek()) return
         updateLocalePreference(chosen)
-        showToast("success", t.settings.languageChanged)
+        dialogToast(dialogRef, "success", t.settings.languageChanged)
       }}
     />
   ) as Adw.ComboRow
@@ -199,6 +266,7 @@ function buildEditSubpage(
   initial: AppDefinition,
   isNew: boolean,
 ): Adw.NavigationPage {
+  const dialogRef: DialogRef = () => dialog
   const idEntry = (
     <Adw.EntryRow title={t.settings.fieldId} text={initial.id} />
   ) as Adw.EntryRow
@@ -208,9 +276,7 @@ function buildEditSubpage(
   const labelEntry = (
     <Adw.EntryRow title={t.settings.fieldLabel} text={initial.label} />
   ) as Adw.EntryRow
-  const iconEntry = (
-    <Adw.EntryRow title={t.settings.fieldIcon} text={initial.icon} />
-  ) as Adw.EntryRow
+  const iconEntry = IconField(initial.icon)
   const attrEntry = (
     <Adw.EntryRow title={t.settings.fieldAttr} text={initial.attr} />
   ) as Adw.EntryRow
@@ -225,17 +291,27 @@ function buildEditSubpage(
     const id = idEntry.text.trim()
     const input = inputEntry.text.trim()
     if (!id) {
-      showToast("error", t.settings.idRequired)
+      dialogToast(dialogRef, "error", t.settings.idRequired)
       return
     }
     if (!input) {
-      showToast("error", t.settings.inputRequired)
+      dialogToast(dialogRef, "error", t.settings.inputRequired)
       return
     }
     const list = apps.peek()
-    const duplicate = list.some((a) => a.id === id && a.id !== initial.id)
-    if (duplicate) {
-      showToast("error", t.settings.duplicateId(id))
+    // Ao editar, bater com a própria entrada não é duplicata; ao criar,
+    // qualquer id igual é — e aqui `initial.id` pode vir preenchido (import
+    // com palpite), então compará-lo anularia a checagem.
+    const clash = list.find(
+      (a) => a.id === id && (isNew || a.id !== initial.id),
+    )
+    if (clash) {
+      // Nada é gravado: o catálogo fica como estava e a subpágina continua
+      // aberta com o que foi digitado, pra só trocar o id em vez de
+      // preencher tudo de novo. A mensagem nomeia quem já ocupa o id —
+      // sem isso, "já existe" não diz onde procurar.
+      dialogToast(dialogRef, "error", t.settings.duplicateId(id, clash.input))
+      idEntry.grab_focus()
       return
     }
 
@@ -256,8 +332,12 @@ function buildEditSubpage(
         ? [...list, updated]
         : list.map((a) => (a.id === initial.id ? updated : a)),
     )
-    showToast("success", t.toasts.appSaved(id))
+    dialogToast(dialogRef, "success", t.toasts.appSaved(id))
     dialog.pop_subpage()
+    // Sem isso, a aba Aplicativos (fora das Configurações) continuaria
+    // mostrando o resultado da última Verificação, sem refletir o app
+    // recém-editado até o usuário clicar em Verificar de novo.
+    void runCheck({ silent: true })
   }
 
   const toolbar = (
@@ -289,8 +369,9 @@ function buildEditSubpage(
               onClicked={() =>
                 confirmRemoval(dialog, initial.label || initial.id, () => {
                   updateApps(apps.peek().filter((a) => a.id !== initial.id))
-                  showToast("success", t.toasts.appRemoved(initial.id))
+                  dialogToast(dialogRef, "success", t.toasts.appRemoved(initial.id))
                   dialog.pop_subpage()
+                  void runCheck({ silent: true })
                 })
               }
             />
@@ -308,7 +389,71 @@ function buildEditSubpage(
   ) as Adw.NavigationPage
 }
 
+/** Um app com input próprio achado em `home.packages`, ainda sem catálogo. */
+interface ImportCandidate {
+  /** Input do flake que fornece o pacote. */
+  input: string
+  /** Atributo dentro de `packages.${SYSTEM}`, como declarado. */
+  attr: string
+  /** Arquivo do home-manager onde a referência apareceu. */
+  sourceFile: string
+}
+
+function candidateKey(c: ImportCandidate): string {
+  return `${c.input}:${c.attr}`
+}
+
+/**
+ * Monta a entrada de catálogo pra um candidato — `attr` vem do que o
+ * usuário de fato declarou, não de um palpite, então não há o que corrigir
+ * depois.
+ */
+function draftFrom(c: ImportCandidate): AppDefinition {
+  // Quase todo flake de app único expõe `packages.<system>.default`, então
+  // o atributo sozinho colidiria entre inputs diferentes — e o `id` é o que
+  // identifica a entrada no catálogo. O nome do input distingue, e só
+  // quando ele não basta (vários apps no mesmo input) é que o atributo
+  // entra.
+  const id = c.attr === "default" ? c.input : c.attr
+  return {
+    id,
+    label: id,
+    icon: "",
+    input: c.input,
+    attr: `packages.${SYSTEM}.${c.attr}`,
+    storeNames: [],
+  }
+}
+
 function CatalogPage(dialogRef: () => Adw.PreferencesDialog): Gtk.Widget {
+  // Só o que está de fato em `home.packages` (incluindo os módulos
+  // importados): cadastrar um pacote que o usuário não declarou criaria uma
+  // entrada que nunca casa com nada instalado. A leitura é assíncrona
+  // (roda `nix-instantiate --parse`), então a lista começa vazia e se
+  // preenche sozinha — `For` reage ao sinal.
+  const [declared, setDeclared] = createState<ImportCandidate[]>([])
+  void discoverDeclaredPackages()
+    .then((found) => {
+      setDeclared(
+        found
+          .filter((d) => d.kind === "input" && d.attr)
+          .map((d) => ({ input: d.name, attr: d.attr!, sourceFile: d.sourceFile })),
+      )
+    })
+    .catch(() => {
+      // Sem flake válido ainda: a lista fica vazia em vez de quebrar o
+      // diálogo inteiro.
+    })
+
+  // Some da lista assim que vira entrada do catálogo — a comparação é por
+  // input *e* atributo, já que um input pode fornecer vários apps.
+  const importable = createComputed([declared, apps], (found, catalog) => {
+    const cataloged = new Set(catalog.map((a) => `${a.input} ${a.attr}`))
+    return found.filter(
+      (c) => !cataloged.has(`${c.input} packages.${SYSTEM}.${c.attr}`),
+    )
+  })
+
   return (
     <Adw.PreferencesPage
       title={t.settings.catalogTab}
@@ -345,6 +490,33 @@ function CatalogPage(dialogRef: () => Adw.PreferencesDialog): Gtk.Widget {
                 onClicked={() =>
                   dialogRef().push_subpage(
                     buildEditSubpage(dialogRef(), app, false),
+                  )
+                }
+              />
+            </Adw.ActionRow>
+          )}
+        </For>
+      </Adw.PreferencesGroup>
+
+      <Adw.PreferencesGroup
+        title={t.settings.uncatalogedTitle}
+        description={t.settings.uncatalogedDescription}
+      >
+        <For each={importable} id={candidateKey}>
+          {(c: ImportCandidate) => (
+            <Adw.ActionRow
+              title={c.attr}
+              subtitle={c.input}
+              cssClasses={["monospace"]}
+            >
+              <Gtk.Button
+                $type="suffix"
+                iconName="list-add-symbolic"
+                valign={Gtk.Align.CENTER}
+                tooltipText={t.settings.importApp}
+                onClicked={() =>
+                  dialogRef().push_subpage(
+                    buildEditSubpage(dialogRef(), draftFrom(c), true),
                   )
                 }
               />
@@ -400,7 +572,7 @@ export default function SettingsDialog(openSubpage?: string): Adw.PreferencesDia
 
     const dialog = (
       <Adw.PreferencesDialog title={t.settings.title}>
-        {GeneralPage()}
+        {GeneralPage(() => dialogRef)}
         {CatalogPage(() => dialogRef)}
         {AboutPage()}
       </Adw.PreferencesDialog>

@@ -2,3 +2,16 @@
 .monospace {
   font-family: monospace;
 }
+
+// Severidade nos toasts do diálogo. O `Adw.Toast` não é um Gtk.Widget, então
+// não aceita classe CSS — quem recebe estas é o `custom_title` dele (ver
+// `dialogToast` em src/ui/SettingsDialog.tsx). As cores vêm das custom
+// properties do libadwaita (1.6+) para acompanharem o tema claro/escuro em
+// vez de ficarem fixas.
+.toast-error {
+  color: var(--error-color);
+}
+
+.toast-warning {
+  color: var(--warning-color);
+}

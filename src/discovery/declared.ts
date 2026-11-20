@@ -5,12 +5,20 @@ export interface DeclaredPackage {
   kind: "nixpkgs" | "input"
   /** Para "nixpkgs": caminho de atributo (ex.: "hunspellDicts.pt_BR"). Para "input": nome do input. */
   name: string
+  /**
+   * Só para "input": o atributo dentro de `packages.${system}` realmente
+   * pedido (ex.: "photocraft"), não um "default" assumido. Um input pode
+   * fornecer vários pacotes — sem isso, duas referências a atributos
+   * diferentes do mesmo input colapsariam numa só.
+   */
+  attr?: string
   sourceFile: string
 }
 
 const SIMPLE_ATTR = /^[A-Za-z_][\w'-]*$/
 const DOTTED_ATTR = /^\(([A-Za-z_][\w'-]*)\)\.([A-Za-z_][\w'-]*)$/
-const INPUT_REF = /\(inputs\)\.([A-Za-z0-9_-]+)\.packages\./
+const INPUT_REF =
+  /^\(inputs\)\.([A-Za-z0-9_-]+)\.packages\..*\.([A-Za-z_][\w'-]*)$/
 
 /**
  * Casa o `(`/`[`/`{` em `openIndex` com seu fechamento, contando os três
@@ -32,7 +40,9 @@ function matchBalanced(text: string, openIndex: number): number {
 
 function classify(item: string): Omit<DeclaredPackage, "sourceFile"> | null {
   const inputMatch = INPUT_REF.exec(item)
-  if (inputMatch) return { kind: "input", name: inputMatch[1] }
+  if (inputMatch) {
+    return { kind: "input", name: inputMatch[1], attr: inputMatch[2] }
+  }
 
   if (SIMPLE_ATTR.test(item)) return { kind: "nixpkgs", name: item }
 
@@ -131,7 +141,8 @@ export async function discoverDeclaredPackages(
   const seen = new Map<string, DeclaredPackage>()
   for (const list of perFile) {
     for (const d of list) {
-      const key = `${d.kind}:${d.name}`
+      const key =
+        d.kind === "input" ? `input:${d.name}:${d.attr}` : `nixpkgs:${d.name}`
       if (!seen.has(key)) seen.set(key, d)
     }
   }

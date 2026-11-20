@@ -184,8 +184,12 @@ export const es: Messages = {
     catalogTab: "Catálogo",
     catalogTitle: "Catálogo de aplicaciones",
     catalogDescription:
-      'Aplicaciones con entrada propia en el flake, actualizables por separado en la pestaña Aplicaciones. Las que siguen el patrón "inputs.NOMBRE.packages.${pkgs.system}.default" dentro de home.packages ya aparecen allí solas — registra aquí solo lo que no siga ese patrón.',
+      "Aplicaciones con entrada propia en el flake, actualizables por separado en la pestaña Aplicaciones. Solo lo registrado aquí aparece allí — agrega una app abajo, o impórtala directo de una entrada del flake.lock más abajo.",
     addApp: "Añadir aplicación",
+    uncatalogedTitle: "Encontrados en home.packages",
+    uncatalogedDescription:
+      "Paquetes que declaraste desde una entrada propia del flake y aún no están en el catálogo. El atributo viene de tu propia configuración, así que nada aquí es una suposición.",
+    importApp: "Añadir al catálogo",
     edit: "Editar",
     newApp: "Nueva aplicación",
     save: "Guardar",
@@ -202,11 +206,14 @@ export const es: Messages = {
     fieldLabel: "Nombre mostrado (opcional — usa el id si se deja vacío)",
     fieldIcon:
       "Icono del tema GTK (opcional — usa uno genérico si se deja vacío)",
+    browseIcons: "Buscar iconos",
+    searchIcons: "Buscar iconos…",
     fieldAttr: "Atributo dentro de la entrada (opcional)",
     fieldStoreNames: "Nombres en la store, separados por comas (opcional)",
     idRequired: "El campo id es obligatorio",
     inputRequired: 'El campo "entrada del flake" es obligatorio',
-    duplicateId: (id) => `Ya existe una aplicación con id "${id}"`,
+    duplicateId: (id, input) =>
+      `No guardado: el id "${id}" ya es de la app de la entrada "${input}". Elige otro id.`,
 
     aboutTab: "Acerca de",
     aboutTitle: "Acerca de y cómo usar",
