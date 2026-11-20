@@ -1,6 +1,5 @@
 import GLib from "gi://GLib"
-import Gio from "gi://Gio"
-import { run, runOk, readFile } from "../core/proc"
+import { run, readFile } from "../core/proc"
 import {
   flakeDir as flakeDirState,
   homeConfiguration,
@@ -119,40 +118,6 @@ export function formatDate(lastModified: number | null): string | null {
 }
 
 /**
- * Cópia descartável do flake, usada para descobrir o que *entraria* numa
- * atualização sem tocar no `flake.lock` real — mesma técnica do `checkupdates`
- * do Arch.
- */
-export class CandidateFlake {
-  private constructor(readonly dir: string) {}
-
-  static async prepare(
-    inputs: string[] = [],
-    sourceDir = flakeDirState.peek(),
-  ): Promise<CandidateFlake> {
-    const dir = GLib.dir_make_tmp("nix-updater-XXXXXX")
-    for (const file of ["flake.nix", "flake.lock"]) {
-      const src = Gio.File.new_for_path(`${sourceDir}/${file}`)
-      const dest = Gio.File.new_for_path(`${dir}/${file}`)
-      src.copy(dest, Gio.FileCopyFlags.OVERWRITE, null, null)
-    }
-
-    // Sem argumentos, move todos os inputs; com nomes, move só os indicados.
-    // Os nomes vêm do lock/catálogo, nunca de metadado externo.
-    await runOk(["nix", "flake", "update", ...inputs, "--flake", dir])
-    return new CandidateFlake(dir)
-  }
-
-  lock(): LockNodes {
-    return readLock(this.dir)
-  }
-
-  dispose(): void {
-    void run(["rm", "-rf", "--", this.dir])
-  }
-}
-
-/**
  * Avalia `<flake>.inputs.<input>.<attr>.version`.
  *
  * `input` e `attr` são constantes de `src/core/registry.ts`; é isso que torna a
@@ -178,6 +143,54 @@ export async function evalVersion(
   return version.length > 0 ? version : null
 }
 
+/** Um input a ser avaliado noutra revisão, via `--override-input`. */
+export interface InputOverride {
+  input: string
+  flakeRef: string
+}
+
+const SAFE_REV = /^[0-9a-f]{7,40}$/i
+
+/**
+ * Referência de flake para a origem numa revisão específica — o que permite
+ * avaliar o input *como ele seria* depois da atualização, sem mexer no
+ * `flake.lock` nem copiar o flake para lugar nenhum.
+ */
+export function flakeRefAt(
+  source: InputSource | null,
+  rev: string | null,
+): string | null {
+  if (!source || !rev || !SAFE_REV.test(rev)) return null
+  const { type, owner, repo, url } = source
+  switch (type) {
+    case "github":
+    case "gitlab":
+    case "sourcehut":
+      return owner && repo ? `${type}:${owner}/${repo}/${rev}` : null
+    case "git":
+      // Aqui o prefixo "git+" é mantido: é o que o Nix espera numa
+      // referência de flake (ao contrário do endereço passado ao git).
+      return url ? `${url.split("?")[0]}?rev=${rev}` : null
+    default:
+      return null
+  }
+}
+
+/** Avalia `<flakeRef>#<attr>.version` — o input sozinho, numa revisão dada. */
+export async function evalVersionAtRef(
+  flakeRef: string,
+  attr: string,
+): Promise<string | null> {
+  if (!SAFE_ATTR_PATH.test(attr)) return null
+  const result = await run(
+    ["nix", "eval", "--raw", "--no-warn-dirty", `${flakeRef}#${attr}.version`],
+    { timeoutMs: 120_000 },
+  )
+  if (!result.ok) return null
+  const version = result.stdout.trim()
+  return version.length > 0 ? version : null
+}
+
 /**
  * Como `evalVersion`, mas para vários pacotes numa chamada só — evita um
  * `nix eval` por pacote declarado em `home.packages`.
@@ -194,8 +207,9 @@ export async function evalVersion(
 export async function evalVersions(
   flakeDir: string,
   attrPaths: string[],
-  homeConfig = homeConfiguration.peek(),
+  options: { overrides?: InputOverride[]; homeConfig?: string } = {},
 ): Promise<Record<string, string | null>> {
+  const homeConfig = options.homeConfig ?? homeConfiguration.peek()
   const safe = attrPaths.filter((p) => SAFE_ATTR_PATH.test(p))
   if (safe.length === 0) return {}
   if (!SAFE_ATTR_PATH.test(homeConfig)) return {}
@@ -203,19 +217,30 @@ export async function evalVersions(
   const entries = safe
     .map((p) => `"${p}" = (builtins.tryEval (pkgs.${p}.version or null)).value or null;`)
     .join(" ")
-  const expr =
-    `let pkgs = (builtins.getFlake "${flakeDir}").homeConfigurations."${homeConfig}".pkgs; ` +
-    `in { ${entries} }`
 
-  const result = await run([
-    "nix",
-    "eval",
-    "--impure",
-    "--json",
-    "--no-warn-dirty",
-    "--expr",
-    expr,
+  // `--apply` em vez de `--expr`: só a forma com referência de flake aceita
+  // `--override-input`, que é como se avalia o `pkgs` que a atualização
+  // traria sem escrever no flake.lock.
+  const overrideArgs = (options.overrides ?? []).flatMap((o) => [
+    "--override-input",
+    o.input,
+    o.flakeRef,
   ])
+
+  const result = await run(
+    [
+      "nix",
+      "eval",
+      "--json",
+      "--no-warn-dirty",
+      "--no-write-lock-file",
+      `${flakeDir}#homeConfigurations.${homeConfig}.pkgs`,
+      "--apply",
+      `pkgs: { ${entries} }`,
+      ...overrideArgs,
+    ],
+    { timeoutMs: 180_000 },
+  )
   if (!result.ok) return {}
   try {
     return JSON.parse(result.stdout)

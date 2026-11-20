@@ -11,14 +11,17 @@ import type {
 import { listInstalled } from "../discovery/installed"
 import { discoverDeclaredPackages, type DeclaredPackage } from "../discovery/declared"
 import {
-  CandidateFlake,
   evalVersion,
+  evalVersionAtRef,
   evalVersions,
+  flakeRefAt,
   formatDate,
   readLock,
   shortRev,
+  type InputOverride,
   type LockNodes,
 } from "../discovery/flake"
+import { probeInputs, type ProbeResults } from "../discovery/probe"
 
 function findInstalled(
   app: AppDefinition,
@@ -35,26 +38,48 @@ function stateOf(
   return installed === candidate ? "up-to-date" : "update-available"
 }
 
+/**
+ * Versão que o app teria se o input fosse para a revisão sondada.
+ *
+ * Avalia o flake do próprio input naquela revisão — não precisa do flake do
+ * usuário, nem de cópia temporária, nem de escrever no lock. Quando o input
+ * não mudou (ou não é sondável), não há o que avaliar.
+ */
+async function candidateVersionFor(
+  current: LockNodes,
+  probes: ProbeResults,
+  inputName: string,
+  attr: string,
+  fallback: string | null,
+): Promise<string | null> {
+  const probe = probes[inputName]
+  if (!probe || probe.status !== "update") return fallback
+
+  const ref = flakeRefAt(current[inputName]?.source ?? null, probe.remoteRev)
+  if (!ref) return fallback
+
+  return (await evalVersionAtRef(ref, attr)) ?? fallback
+}
+
 async function appStatus(
   app: AppDefinition,
   installed: StorePackage[],
   current: LockNodes,
-  candidateLock: LockNodes,
-  candidateDir: string,
+  probes: ProbeResults,
 ): Promise<AppStatus> {
-  // Versão em uso: a closure do perfil é a verdade. VSCodium não entra no
-  // ambiente combinado, então cai no fallback de avaliar o lock atual.
+  // Versão em uso: a closure do perfil é a verdade. Um pacote que não entra
+  // no ambiente combinado não aparece na closure, e aí vale o lock atual.
   const fromProfile = findInstalled(app, installed)
   const lockVersion = await evalVersion(flakeDir.peek(), app.input, app.attr)
   const installedVersion = fromProfile?.version || lockVersion
 
-  const inputChanged =
-    current[app.input]?.rev !== candidateLock[app.input]?.rev
-
-  // Se o input não mudou, não há o que avaliar: a candidata é a do lock atual.
-  const candidateVersion = inputChanged
-    ? await evalVersion(candidateDir, app.input, app.attr)
-    : lockVersion
+  const candidateVersion = await candidateVersionFor(
+    current,
+    probes,
+    app.input,
+    app.attr,
+    lockVersion,
+  )
 
   // O perfil ativo pode divergir do flake.lock sem que nenhum input tenha
   // mudado — por exemplo depois de um rollback de geração, que reverte só o
@@ -88,15 +113,17 @@ async function appStatus(
 async function discoveredAppStatus(
   inputName: string,
   current: LockNodes,
-  candidateLock: LockNodes,
-  candidateDir: string,
+  probes: ProbeResults,
 ): Promise<AppStatus> {
   const attr = `packages.${SYSTEM}.default`
-  const inputChanged = current[inputName]?.rev !== candidateLock[inputName]?.rev
   const installed = await evalVersion(flakeDir.peek(), inputName, attr)
-  const candidate = inputChanged
-    ? await evalVersion(candidateDir, inputName, attr)
-    : installed
+  const candidate = await candidateVersionFor(
+    current,
+    probes,
+    inputName,
+    attr,
+    installed,
+  )
 
   return {
     id: inputName,
@@ -123,23 +150,23 @@ async function discoveredAppStatus(
  */
 async function declaredPackageStatuses(
   declared: DeclaredPackage[],
-  sharedChanged: boolean,
-  candidateDir: string,
+  overrides: InputOverride[],
 ): Promise<DeclaredPackageStatus[]> {
   const nixpkgsOnly = declared.filter((d) => d.kind === "nixpkgs")
   const sourceOf = new Map(nixpkgsOnly.map((d) => [d.name, d.sourceFile]))
   const attrs = [...new Set(nixpkgsOnly.map((d) => d.name))]
+  const hasOverrides = overrides.length > 0
 
   const [installedVersions, candidateVersions] = await Promise.all([
     evalVersions(flakeDir.peek(), attrs),
-    sharedChanged
-      ? evalVersions(candidateDir, attrs)
+    hasOverrides
+      ? evalVersions(flakeDir.peek(), attrs, { overrides })
       : Promise.resolve<Record<string, string | null>>({}),
   ])
 
   return attrs.map((attr) => {
     const installed = installedVersions[attr] ?? null
-    const candidate = sharedChanged ? candidateVersions[attr] ?? null : installed
+    const candidate = hasOverrides ? candidateVersions[attr] ?? null : installed
     return {
       attr,
       installed,
@@ -152,98 +179,99 @@ async function declaredPackageStatuses(
 
 function inputStatuses(
   current: LockNodes,
-  candidate: LockNodes,
+  probes: ProbeResults,
   appByInput: Map<string, string>,
 ): InputStatus[] {
   return Object.keys(current)
     .sort()
     .map((name) => {
-      const a = current[name]
-      const b = candidate[name] ?? a
-      const appId = appByInput.get(name)
+      const node = current[name]
+      const probe = probes[name]
+      // Só "update" move a revisão candidata. "unreachable" e "pinned"
+      // deixam tudo como está: não saber não é o mesmo que estar em dia,
+      // mas é melhor que inventar uma atualização que pode não existir.
+      const changed = probe?.status === "update"
       return {
         name,
-        currentRev: shortRev(a.rev),
-        candidateRev: shortRev(b.rev),
-        currentDate: formatDate(a.lastModified),
-        candidateDate: formatDate(b.lastModified),
-        changed: a.rev !== b.rev,
-        apps: appId ? [appId] : [],
+        currentRev: shortRev(node.rev),
+        candidateRev: shortRev(changed ? probe.remoteRev : node.rev),
+        currentDate: formatDate(node.lastModified),
+        candidateDate: formatDate(
+          changed ? (probe.remoteLastModified ?? node.lastModified) : node.lastModified,
+        ),
+        changed,
+        apps: appByInput.get(name) ? [appByInput.get(name)!] : [],
       }
     })
 }
 
 /**
  * Checagem somente-leitura: nada no diretório do flake (`flakeDir`, ver
- * `src/core/config.ts`) é alterado.
+ * `src/core/config.ts`) é alterado — nem o `flake.lock`, nem por meio de
+ * cópia temporária.
  *
- * Caro apenas na primeira execução do dia (baixa os tarballs dos inputs
- * candidatos); o resto é avaliação com cache do Nix.
+ * Descobrir *o que* mudou é só uma consulta por input ao servidor remoto
+ * (ver `src/discovery/probe.ts`), sem download. Só os inputs que de fato
+ * mudaram são avaliados para saber qual versão trariam, e essa avaliação
+ * acontece sobre o flake do próprio input, ou via `--override-input`.
  */
 export async function check(): Promise<CheckResult> {
-  const [installed, candidate, declared] = await Promise.all([
+  const [installed, declared] = await Promise.all([
     listInstalled(),
-    CandidateFlake.prepare(),
     discoverDeclaredPackages(),
   ])
 
-  try {
-    const current = readLock()
-    const candidateLock = candidate.lock()
-    const catalog = appCatalog.peek()
-    const catalogInputs = new Set(catalog.map((a) => a.input))
+  const current = readLock()
+  const probes = await probeInputs(current)
+  const catalog = appCatalog.peek()
+  const catalogInputs = new Set(catalog.map((a) => a.input))
 
-    const catalogApps = await Promise.all(
-      catalog.map((app) =>
-        appStatus(app, installed, current, candidateLock, candidate.dir),
-      ),
-    )
-    const discoveredInputNames = [
-      ...new Set(
-        declared
-          .filter((d) => d.kind === "input" && !catalogInputs.has(d.name))
-          .map((d) => d.name),
-      ),
-    ]
-    const discoveredApps = await Promise.all(
-      discoveredInputNames.map((name) =>
-        discoveredAppStatus(name, current, candidateLock, candidate.dir),
-      ),
-    )
-    const apps = [...catalogApps, ...discoveredApps]
+  const catalogApps = await Promise.all(
+    catalog.map((app) => appStatus(app, installed, current, probes)),
+  )
+  const discoveredInputNames = [
+    ...new Set(
+      declared
+        .filter((d) => d.kind === "input" && !catalogInputs.has(d.name))
+        .map((d) => d.name),
+    ),
+  ]
+  const discoveredApps = await Promise.all(
+    discoveredInputNames.map((name) =>
+      discoveredAppStatus(name, current, probes),
+    ),
+  )
+  const apps = [...catalogApps, ...discoveredApps]
 
-    const appByInput = new Map(apps.map((a) => [a.input, a.id]))
-    const inputs = inputStatuses(current, candidateLock, appByInput)
+  const appByInput = new Map(apps.map((a) => [a.input, a.id]))
+  const inputs = inputStatuses(current, probes, appByInput)
 
-    // Inputs sem app dono: são os que governam os pacotes declarados e os
-    // "outros pacotes", e qualquer um deles que mude pode mover as versões.
-    const changedShared = inputs.filter((i) => i.changed && i.apps.length === 0)
+  // Inputs sem app dono: são os que governam os pacotes declarados e os
+  // "outros pacotes", e qualquer um deles que mude pode mover as versões.
+  const changedShared = inputs.filter((i) => i.changed && i.apps.length === 0)
+  const overrides = changedShared.flatMap((i) => {
+    const ref = flakeRefAt(current[i.name]?.source ?? null, probes[i.name]?.remoteRev ?? null)
+    return ref ? [{ input: i.name, flakeRef: ref }] : []
+  })
 
-    const declaredPackages = await declaredPackageStatuses(
-      declared,
-      changedShared.length > 0,
-      candidate.dir,
-    )
+  const declaredPackages = await declaredPackageStatuses(declared, overrides)
 
-    const claimed = new Set([
-      ...catalog.flatMap((a) => a.storeNames),
-      ...discoveredApps.map((a) => a.id),
-      ...declaredPackages.map((d) => d.attr),
-    ])
-    const sharedPackages = installed.filter((p) => !claimed.has(p.name))
+  const claimed = new Set([
+    ...catalog.flatMap((a) => a.storeNames),
+    ...discoveredApps.map((a) => a.id),
+    ...declaredPackages.map((d) => d.attr),
+  ])
+  const sharedPackages = installed.filter((p) => !claimed.has(p.name))
 
-    const appUpdates = apps.filter((a) => a.state === "update-available").length
+  const appUpdates = apps.filter((a) => a.state === "update-available").length
 
-    return {
-      checkedAt: new Date().toISOString(),
-      flakeDir: flakeDir.peek(),
-      apps,
-      inputs,
-      declaredPackages,
-      sharedPackages,
-      updatesAvailable: appUpdates + changedShared.length,
-    }
-  } finally {
-    candidate.dispose()
+  return {
+    checkedAt: new Date().toISOString(),
+    flakeDir: flakeDir.peek(),
+    apps,
+    inputs,
+    declaredPackages,
+    sharedPackages,
+    updatesAvailable: appUpdates + changedShared.length,
   }
 }
