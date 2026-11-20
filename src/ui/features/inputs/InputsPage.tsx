@@ -4,6 +4,7 @@ import { For, createComputed } from "ags"
 import { t } from "../../../core/i18n"
 import { result } from "../../../core/state"
 import type { InputStatus } from "../../../core/types"
+import HelpButton from "../../components/HelpButton"
 import SelectionCheckButton from "../../components/SelectionCheckButton"
 import { trackById } from "../../reactivity"
 
@@ -39,6 +40,7 @@ export default function InputsPage(): Gtk.Widget {
       <Adw.PreferencesGroup
         title={t.inputs.title}
         description={t.inputs.description}
+        headerSuffix={HelpButton(t.inputs.helpText)}
       >
         <For each={inputs} id={(i: InputStatus) => i.name}>
           {(input: InputStatus) => InputRow(input)}

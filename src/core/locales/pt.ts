@@ -7,6 +7,7 @@ export const pt: Messages = {
     menu: "Menu",
     settings: "Configurações",
     about: "Sobre o Nix Updater",
+    help: "Ajuda",
   },
 
   tabs: {
@@ -54,6 +55,13 @@ export const pt: Messages = {
     title: "Aplicativos",
     description:
       "Cada um vem de um input próprio do flake, então pode ser atualizado sozinho.",
+    helpText:
+      "A versão de um app só muda quando o input dele de fato avança " +
+      "aquele pacote específico — não toda vez que a revisão do input " +
+      "muda. A mesma atualização de revisão pode deixar a versão de um " +
+      "app igual e mudar a de outro: um commit novo não garante uma " +
+      "versão nova de pacote. Veja a aba Inputs pra saber quais revisões " +
+      'de fato mudaram, independente de algum app aqui dizer "atualização".',
     lockAhead: (installed, candidate) =>
       `${installed} (lock já tem ${candidate})`,
   },
@@ -62,6 +70,14 @@ export const pt: Messages = {
     title: "Inputs do flake",
     description:
       "Revisão travada no flake.lock e a revisão candidata. Mudança de input não significa, necessariamente, versão nova de algum app.",
+    helpText:
+      "Uma revisão mudada significa que novos commits entraram naquele " +
+      "input — não que todo pacote que vem dele ganhou versão nova. Por " +
+      "exemplo, vscode-pkgs e zed-pkgs podem avançar pra mesma revisão " +
+      "nova, mas só a versão do Zed muda de fato se ele for o único " +
+      "pacote cujo build avançou nesse intervalo. Veja as abas " +
+      "Aplicativos e Pacotes pra saber quais versões realmente mudaram " +
+      "antes de decidir o que atualizar.",
   },
 
   packages: {

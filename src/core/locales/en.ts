@@ -13,6 +13,7 @@ export const en = {
     menu: "Menu",
     settings: "Settings",
     about: "About Nix Updater",
+    help: "Help",
   },
 
   tabs: {
@@ -59,6 +60,13 @@ export const en = {
     title: "Apps",
     description:
       "Each one comes from its own flake input, so it can be updated on its own.",
+    helpText:
+      "An app's version only changes when its input actually bumps that " +
+      "specific package — not every time the input's revision moves. The " +
+      "same revision bump can leave one app's version unchanged while " +
+      "moving another's: a new commit doesn't guarantee a new package " +
+      "version. Check the Inputs tab to see which revisions actually " +
+      'changed, independently of whether any app here says "update".',
     lockAhead: (installed: string, candidate: string) =>
       `${installed} (lock already has ${candidate})`,
   },
@@ -67,6 +75,14 @@ export const en = {
     title: "Flake inputs",
     description:
       "Revision locked in flake.lock and the candidate revision. A changed input does not necessarily mean a new version of any app.",
+    helpText:
+      "A changed revision means new commits landed in that input — it " +
+      "does not mean every package coming from it got a new version. For " +
+      "example, vscode-pkgs and zed-pkgs can both move to the same new " +
+      "revision, yet only Zed's version actually changes if that's the " +
+      "only package whose build was bumped in between. Check the Apps " +
+      "and Packages tabs for which versions really moved before deciding " +
+      "what to update.",
   },
 
   packages: {

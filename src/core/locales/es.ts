@@ -7,6 +7,7 @@ export const es: Messages = {
     menu: "Menú",
     settings: "Configuración",
     about: "Acerca de Nix Updater",
+    help: "Ayuda",
   },
 
   tabs: {
@@ -54,6 +55,14 @@ export const es: Messages = {
     title: "Aplicaciones",
     description:
       "Cada una viene de su propia entrada del flake, así que puede actualizarse por separado.",
+    helpText:
+      "La versión de una aplicación solo cambia cuando su entrada " +
+      "realmente avanza ese paquete en concreto — no cada vez que cambia " +
+      "la revisión de la entrada. El mismo avance de revisión puede " +
+      "dejar igual la versión de una app y cambiar la de otra: un commit " +
+      "nuevo no garantiza una versión nueva del paquete. Revisa la " +
+      "pestaña Entradas para ver qué revisiones cambiaron de verdad, " +
+      'independientemente de si alguna app aquí dice "actualización".',
     lockAhead: (installed, candidate) =>
       `${installed} (el lock ya tiene ${candidate})`,
   },
@@ -62,6 +71,14 @@ export const es: Messages = {
     title: "Entradas del flake",
     description:
       "Revisión fijada en flake.lock y la revisión candidata. Que una entrada cambie no significa, necesariamente, una versión nueva de alguna aplicación.",
+    helpText:
+      "Que una revisión haya cambiado significa que llegaron commits " +
+      "nuevos a esa entrada — no que todo paquete que viene de ella tenga " +
+      "una versión nueva. Por ejemplo, vscode-pkgs y zed-pkgs pueden " +
+      "avanzar a la misma revisión nueva, pero solo la versión de Zed " +
+      "cambia de verdad si es el único paquete cuyo build avanzó en ese " +
+      "intervalo. Revisa las pestañas Aplicaciones y Paquetes para saber " +
+      "qué versiones cambiaron de verdad antes de decidir qué actualizar.",
   },
 
   packages: {

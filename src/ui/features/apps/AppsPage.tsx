@@ -4,6 +4,7 @@ import { For, createComputed } from "ags"
 import { t } from "../../../core/i18n"
 import { result } from "../../../core/state"
 import type { AppStatus } from "../../../core/types"
+import HelpButton from "../../components/HelpButton"
 import SelectionCheckButton from "../../components/SelectionCheckButton"
 import StatusBadge from "../../components/StatusBadge"
 import { trackById } from "../../reactivity"
@@ -59,6 +60,7 @@ export default function AppsPage(): Gtk.Widget {
       <Adw.PreferencesGroup
         title={t.apps.title}
         description={t.apps.description}
+        headerSuffix={HelpButton(t.apps.helpText)}
       >
         <For each={apps} id={(a: AppStatus) => a.id}>
           {(app: AppStatus) => AppRow(app)}
